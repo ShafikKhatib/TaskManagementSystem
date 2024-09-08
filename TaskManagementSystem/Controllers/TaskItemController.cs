@@ -23,7 +23,8 @@ namespace TaskManagementSystem.Controllers
             // Include Notes when retrieving TaskItems
             var tasks = await _context.TaskItems
                 .Where(t => t.EmployeeId == employeeId)
-                .Include(t => t.TaskNotes) // Eagerly load Notes
+                .Include(t => t.TaskNotes)
+                .Include(t => t.Employee) 
                 .ToListAsync();
 
             if (tasks == null || tasks.Count == 0)
