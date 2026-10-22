@@ -20,214 +20,182 @@ namespace TaskManagementSystem.Controllers
         [HttpGet("{employeeId}/getEmployeeTask")]
         public async Task<IActionResult> GetTasksByEmployee(int employeeId)
         {
-            // Include Notes when retrieving TaskItems
-            var tasks = await _context.TaskItems
-                .Where(t => t.EmployeeId == employeeId)
-                .Include(t => t.TaskNotes)
-                .Include(t => t.Employee) 
-                .ToListAsync();
-
-            if (tasks == null || tasks.Count == 0)
-                return NotFound("Task not found for given employee");
-
-            // Shape the response to include Notes content
-            var response = tasks.Select(task => new
+            try
             {
-                task.TaskId,
-                task.Title,
-                task.Description,
-                task.DueDate,
-                task.IsCompleted,
-                Employee = task.Employee == null ? null : new
-                {
-                    task.Employee.EmployeeId,
-                    task.Employee.Name
-                },
-                Notes = task.TaskNotes == null ? null : task.TaskNotes.Select(note => new
-                {
-                    note.NoteId,
-                    note.Content,
-                    note.CreatedDate
-                })
-            });
+                var tasks = await _context.TaskItems
+                    .Where(t => t.EmployeeId == employeeId)
+                    .Include(t => t.TaskNotes)
+                    .Include(t => t.Employee)
+                    .ToListAsync();
 
-            return Ok(response);
+                if (tasks == null || tasks.Count == 0)
+                    return NotFound("Task not found for given employee");
+
+                var response = tasks.Select(task => new
+                {
+                    task.TaskId,
+                    task.Title,
+                    task.Description,
+                    task.DueDate,
+                    task.IsCompleted,
+                    Employee = task.Employee == null ? null : new
+                    {
+                        task.Employee.EmployeeId,
+                        task.Employee.Name
+                    },
+                    Notes = task.TaskNotes == null ? null : task.TaskNotes.Select(note => new
+                    {
+                        note.NoteId,
+                        note.Content,
+                        note.CreatedDate
+                    })
+                });
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while retrieving tasks.", error = ex.Message });
+            }
         }
 
         // POST: api/taskitem/CreateTask
         [HttpPost("createTask")]
         public async Task<IActionResult> CreateTask([FromBody] TaskItem task)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            _context.TaskItems.Add(task);
-            await _context.SaveChangesAsync();
-
-            return Ok(new
+            try
             {
-                message = "Task created successfully",
-                task = task
-            });
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                if (task.EmployeeId <= 0)
+                    return BadRequest("Invalid EmployeeId");
+
+                var employeeExists = await _context.Employees.AnyAsync(e => e.EmployeeId == task.EmployeeId);
+                if (!employeeExists)
+                    return NotFound("Employee not found");
+
+                _context.TaskItems.Add(task);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Task created successfully",
+                    task = task
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while creating the task.", error = ex.Message });
+            }
         }
 
         // PUT: api/taskitem/{id}/UpdateTask
         [HttpPut("{id}/updateTask")]
         public async Task<IActionResult> UpdateTask(int id, [FromBody] TaskItem task)
         {
-            if (id != task.TaskId)
-                return BadRequest("Task not found");
-
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            _context.Entry(task).State = EntityState.Modified;
-            await _context.SaveChangesAsync();
-
-            return Ok(new
+            try
             {
-                message = "Task updated successfully",
-                task = task
-            });
+                if (id != task.TaskId)
+                    return BadRequest("Task ID mismatch");
+
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
+
+                var existingTask = await _context.TaskItems.FindAsync(id);
+                if (existingTask == null)
+                    return NotFound("Task not found");
+
+                _context.Entry(existingTask).State = EntityState.Detached;
+                _context.Entry(task).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Task updated successfully",
+                    task = task
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while updating the task.", error = ex.Message });
+            }
         }
 
         // DELETE: api/taskitem/{id}/DeleteTask
         [HttpDelete("{id}/deleteTask")]
         public async Task<IActionResult> DeleteTask(int id)
         {
-            var task = await _context.TaskItems.FindAsync(id);
-            if (task == null)
-                return NotFound("Task not found");
+            try
+            {
+                var task = await _context.TaskItems.FindAsync(id);
+                if (task == null)
+                    return NotFound("Task not found");
 
-            _context.TaskItems.Remove(task);
-            await _context.SaveChangesAsync();
+                _context.TaskItems.Remove(task);
+                await _context.SaveChangesAsync();
 
-            return Ok(new {message = "Task deleted successfully"});
+                return Ok(new { message = "Task deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while deleting the task.", error = ex.Message });
+            }
         }
 
         [HttpPost("{id}/markComplete")]
         public async Task<IActionResult> MarkTaskAsCompleted(int id)
         {
-            var task = await _context.TaskItems.FindAsync(id);
-            if (task == null)
-                return NotFound("Task not found");
-
-            if (!task.IsCompleted)
+            try
             {
-                task.IsCompleted = true;
-                _context.TaskItems.Update(task);
-                await _context.SaveChangesAsync();
+                var task = await _context.TaskItems.FindAsync(id);
+                if (task == null)
+                    return NotFound("Task not found");
 
-                return Ok(new { message = "Task marked as completed" });
+                if (!task.IsCompleted)
+                {
+                    task.IsCompleted = true;
+                    _context.TaskItems.Update(task);
+                    await _context.SaveChangesAsync();
+
+                    return Ok(new { message = "Task marked as completed" });
+                }
+                else
+                {
+                    return BadRequest(new { message = "Task is already marked as completed" });
+                }
             }
-            else 
+            catch (Exception ex)
             {
-                return BadRequest(new { message = "Task is already marked as completed" });
+                return StatusCode(500, new { message = "An error occurred while marking the task as completed.", error = ex.Message });
             }
         }
 
         [HttpPost("{id}/unmarkComplete")]
         public async Task<IActionResult> MarkTaskAsInCompleted(int id)
         {
-            var task = await _context.TaskItems.FindAsync(id);
-            if (task == null)
-                return NotFound("Task not found");
-
-            
-            if (task.IsCompleted)
+            try
             {
-                task.IsCompleted = false;
-                _context.TaskItems.Update(task);
+                var task = await _context.TaskItems.FindAsync(id);
+                if (task == null)
+                    return NotFound("Task not found");
 
-                await _context.SaveChangesAsync();
-                return Ok(new { message = "Task completed unmarked" });
+                if (task.IsCompleted)
+                {
+                    task.IsCompleted = false;
+                    _context.TaskItems.Update(task);
+                    await _context.SaveChangesAsync();
+                    return Ok(new { message = "Task completed unmarked" });
+                }
+                else
+                {
+                    return BadRequest(new { message = "Task is not marked as completed" });
+                }
             }
-            else
+            catch (Exception ex)
             {
-                return BadRequest(new { message = "Task is not marked as completed" });
+                return StatusCode(500, new { message = "An error occurred while unmarking the task.", error = ex.Message });
             }
-            
-            
-        }
-
-        // POST: api/taskitem/{taskId}/addNote
-        [HttpPost("{taskId}/addNote")]
-        public async Task<IActionResult> AddNoteToTask(int taskId, [FromBody] TaskNotes note)
-        {
-            // Check if the task exists
-            var task = await _context.TaskItems.FindAsync(taskId);
-            if (task == null)
-                return NotFound("Task not found");
-
-            // Add the note to the task
-            note.TaskId = taskId;
-            _context.Notes.Add(note);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Note added successfully", note });
-        }
-
-        // GET: api/taskitem/{taskId}/getNotes
-        [HttpGet("{taskId}/getNotes")]
-        public async Task<IActionResult> GetNotesForTask(int taskId)
-        {
-            var task = await _context.TaskItems
-                .Include(t => t.TaskNotes) // Include related Notes
-                .FirstOrDefaultAsync(t => t.TaskId == taskId);
-
-            if (task == null)
-                return NotFound("Task not found");
-
-            var notes = task.TaskNotes.Select(note => new
-            {
-                note.NoteId,
-                note.Content,
-                note.CreatedDate
-            });
-
-            return Ok(notes);
-        }
-
-        // DELETE: api/taskitem/{taskId}/deleteNotes/{noteId}
-        [HttpDelete("{taskId}/deleteNotes/{noteId}")]
-        public async Task<IActionResult> DeleteNoteForTask(int taskId, int noteId)
-        {
-            var task = await _context.TaskItems
-                .Include(t => t.TaskNotes) // Include related Notes
-                .FirstOrDefaultAsync(t => t.TaskId == taskId);
-
-            if (task == null)
-                return NotFound("Task not found");
-
-            var note = task.TaskNotes.FirstOrDefault(n => n.NoteId == noteId);
-            if (note == null)
-                return NotFound("Note not found");
-
-            _context.Notes.Remove(note); // Remove the note
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Note deleted successfully" });
-        }
-
-
-        [HttpPost("{taskId}/uploadDocument")]
-        public async Task<IActionResult> UploadDocument(int taskId, [FromForm] IFormFile document)
-        {
-            if (document == null || document.Length == 0)
-                return BadRequest("Invalid file.");
-
-            var task = await _context.TaskItems.FindAsync(taskId);
-            if (task == null)
-                return NotFound("Task not found");
-
-            var path = Path.Combine(Directory.GetCurrentDirectory(), "documents", document.FileName);
-
-            using (var stream = new FileStream(path, FileMode.Create))
-            {
-                await document.CopyToAsync(stream);
-            }
-
-            return Ok(new { message = "Document uploaded successfully", path });
         }
     }
 }
